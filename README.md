@@ -69,6 +69,14 @@ MustDevEigo は、エンジニア必須英単語 615 語をブラウザで学べ
 | `Enter` | 次の問題へ進む |
 | `Esc` | ダイアログを閉じる |
 
+## 出典・ライセンス
+
+本アプリの単語データは、プログラミング英語検定の [プログラミング必須英単語 600+](https://progeigo.org/learning/essential-words-600-plus/) を参考にし、一部の英単語・略語・頭字語および訳語を基に作成しています。
+
+原資料の著作権は Globalization Design Institute に帰属し、[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja) ライセンスで提供されています。本アプリの単語データ部分も同ライセンスに従います。アプリケーションコードは [MIT License](./LICENSE) です。
+
+本アプリは原資料の公式サービスではなく、内容には追加・削除・改変があります。
+
 ## 迷ったらこの順番
 
 1. [MustDevEigo](https://rita-rita24.github.io/must-dev-eigo/) をブラウザで開く
