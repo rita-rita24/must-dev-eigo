@@ -217,6 +217,12 @@
     background: rgba(255, 255, 255, 0.06);
   }
 
+  & .persistence-warning {
+    background: rgba(240, 169, 51, 0.16);
+    border-color: var(--color-warning-500);
+    color: #F4D08C;
+  }
+
   & .feedback {
     background: var(--bg-muted);
     border-color: var(--border-default);
@@ -470,6 +476,17 @@ body {
   line-height: 0;
 
   & svg { display: block; }
+}
+
+.persistence-warning {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--state-warning-solid);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-50);
+  color: var(--color-warning-900);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .user-btn {
@@ -825,6 +842,12 @@ body {
   border-bottom: 1px solid var(--border-default);
 }
 .cat-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr) 140px;
   gap: var(--space-2);
@@ -835,6 +858,11 @@ body {
   transition: background var(--dur-fast) var(--ease-out);
 
   &:hover { background: var(--bg-muted); }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
 
   &.selected {
     background: var(--color-warm-100);
@@ -1389,6 +1417,8 @@ body {
       <button class="icon-btn" id="theme-toggle" type="button" title="テーマを切り替え" aria-label="テーマを切り替え"><span class="theme-icon" id="theme-icon" aria-hidden="true"></span></button>
     </div>
   </header>
+
+  <div id="persistence-warning" class="persistence-warning hidden" role="status" aria-live="polite"></div>
 
   <main>
     <section id="screen-home" class="screen">
@@ -1980,12 +2010,12 @@ DATA.abbr = [
   { word: "app", full: "application" },
   { word: "arg", full: "argument" },
   { word: "args", full: "arguments" },
-  { word: "async", full: "asynchronization" },
+  { word: "async", full: "asynchronous" },
   { word: "attr", full: "attribute" },
   { word: "attrs", full: "attributes" },
   { word: "auth", full: "authorization / authentication" },
   { word: "auto", full: "automatic / automatically" },
-  { word: "cert", full: "certified / certificate" },
+  { word: "cert", full: "certificate / certification" },
   { word: "char", full: "character" },
   { word: "cmd", full: "command" },
   { word: "config", full: "configuration" },
@@ -2053,14 +2083,14 @@ DATA.acronym = [
   { word: "CI", full: "Continuous Integration" },
   { word: "CLI", full: "Command Line Interface" },
   { word: "CPU", full: "Central Processing Unit" },
-  { word: "CSS", full: "Cascading Style Sheet" },
+  { word: "CSS", full: "Cascading Style Sheets" },
   { word: "DNS", full: "Domain Name System" },
   { word: "DOM", full: "Document Object Model" },
   { word: "HTML", full: "HyperText Markup Language" },
   { word: "HTTP", full: "HyperText Transfer Protocol" },
   { word: "HTTPS", full: "HyperText Transfer Protocol Secure" },
   { word: "IDE", full: "Integrated Development Environment" },
-  { word: "IE", full: "Id Est / Internet Explorer" },
+  { word: "IE", full: "Internet Explorer" },
   { word: "IO", full: "Input/Output" },
   { word: "IP", full: "Internet Protocol" },
   { word: "JSON", full: "JavaScript Object Notation" },
@@ -2070,7 +2100,7 @@ DATA.acronym = [
   { word: "RGB", full: "Red Green Blue" },
   { word: "SDK", full: "Software Development Kit" },
   { word: "SQL", full: "Structured Query Language" },
-  { word: "SSH", full: "Secure SHell" },
+  { word: "SSH", full: "Secure Shell" },
   { word: "SSL", full: "Secure Sockets Layer" },
   { word: "UI", full: "User Interface" },
   { word: "URI", full: "Uniform Resource Identifier" },
@@ -2078,7 +2108,7 @@ DATA.acronym = [
   { word: "VM", full: "Virtual Machine" },
   { word: "WIP", full: "Work In Progress" },
   { word: "WWW", full: "World Wide Web" },
-  { word: "XML", full: "eXtensible Markup Language" },
+  { word: "XML", full: "Extensible Markup Language" },
 ];
 
 const ABBR_DISTRACTOR_HINTS = {
@@ -2086,7 +2116,7 @@ const ABBR_DISTRACTOR_HINTS = {
   admin: ["admission", "admonition", "adjustment"],
   arg: ["aggregate", "arrangement", "algorithm"],
   args: ["argument", "attributes", "assignments"],
-  async: ["asynchronous", "asymmetric", "synchronous"],
+  async: ["asynchrony", "asymmetric", "synchronous"],
   attr: ["attach", "attention", "attempt"],
   attrs: ["attribute", "attachments", "attempts"],
   cert: ["credential", "certain", "certifier"],
@@ -2180,16 +2210,25 @@ const DB_NAME = "MustDevEigo";
 // IndexedDB open() に渡すスキーマ番号。実体データは kv ストアにキー単位で保存する。
 const DB_SCHEMA = 2;
 const STORE_NAME = "kv";
+const STORAGE_HEALTH_KEY = "__storageHealth";
+const STORAGE_WARNING_TEXT = "この環境では学習記録をブラウザに保存できません。名前、履歴、苦手データ、テーマ、直近の選択は再読み込み後に残らない可能性があります。";
+const IDB_OPEN_TIMEOUT_MS = 2500;
 
 // メモリキャッシュ: IDBは非同期のためレンダー関数を同期に保つ目的で起動時に1度ロードする
 const dataCache = { theme: null, history: [], lastSelection: null, wordStats: {}, userName: null, lastActivityAt: null };
+const storageStatus = { checked: false, persistent: true, error: null };
 
 // IDBに保存したデータの有効期間（2週間）。最終アクティビティから過ぎていたら自動破棄する
 const IDB_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 const touchActivity = async () => {
   dataCache.lastActivityAt = Date.now();
-  try { await idbSet("lastActivityAt", dataCache.lastActivityAt); } catch (e) {}
+  if (storageStatus.checked && !storageStatus.persistent) return;
+  try {
+    await idbSet("lastActivityAt", dataCache.lastActivityAt);
+  } catch (e) {
+    markStorageUnavailable(e);
+  }
 }
 
 // ============================================================
@@ -2207,6 +2246,167 @@ const shuffleArray = (arr) => {
 const qs = (sel, root = document) => root.querySelector(sel);
 const qsa = (sel, root = document) => [...root.querySelectorAll(sel)];
 const byId = id => document.getElementById(id);
+
+const renderStorageWarning = () => {
+  const warning = byId("persistence-warning");
+  if (!warning) return;
+  warning.textContent = storageStatus.persistent ? "" : STORAGE_WARNING_TEXT;
+  warning.classList.toggle("hidden", storageStatus.persistent);
+}
+
+const markStorageAvailable = () => {
+  storageStatus.checked = true;
+  storageStatus.persistent = true;
+  storageStatus.error = null;
+  renderStorageWarning();
+}
+
+const markStorageUnavailable = (error) => {
+  storageStatus.checked = true;
+  storageStatus.persistent = false;
+  storageStatus.error = error ?? null;
+  renderStorageWarning();
+}
+
+const closeDBConnection = (db) => {
+  try {
+    db?.close?.();
+  } catch (e) {
+    // close() failures do not change the app's in-memory fallback behavior.
+  }
+}
+
+const MODAL_IDS = ["user-modal", "notice-modal", "confirm-modal"];
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+  "[contenteditable='true']",
+].join(",");
+
+const isVisibleFocusable = (element) => (
+  element instanceof HTMLElement &&
+  !element.hidden &&
+  element.getAttribute("aria-hidden") !== "true" &&
+  !element.closest("[hidden]") &&
+  element.getClientRects().length > 0
+);
+
+const getFocusableElements = (root) => qsa(FOCUSABLE_SELECTOR, root).filter(isVisibleFocusable);
+
+const isModalVisible = (id) => {
+  const modal = byId(id);
+  return Boolean(modal && !modal.classList.contains("hidden"));
+}
+
+const getActiveModal = () => {
+  for (const id of MODAL_IDS.slice().reverse()) {
+    const modal = byId(id);
+    if (modal && isModalVisible(id)) return modal;
+  }
+  return null;
+}
+
+const isAnyModalOpen = () => Boolean(getActiveModal());
+
+const updateAppInert = () => {
+  const app = qs(".app");
+  if (!app) return;
+  const blocked = isAnyModalOpen();
+  app.inert = blocked;
+  app.toggleAttribute("inert", blocked);
+  if (blocked) app.setAttribute("aria-hidden", "true");
+  else app.removeAttribute("aria-hidden");
+}
+
+const modalReturnFocus = new Map();
+
+const focusModal = (modal, preferredFocus) => {
+  const target = (
+    preferredFocus instanceof HTMLElement &&
+    modal.contains(preferredFocus) &&
+    isVisibleFocusable(preferredFocus)
+  ) ? preferredFocus : getFocusableElements(modal)[0];
+
+  if (target) target.focus();
+}
+
+const openManagedModal = (modal, initialFocus) => {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body && !modal.contains(active)) {
+    modalReturnFocus.set(modal.id, active);
+  }
+  modal.classList.remove("hidden");
+  focusModal(modal, initialFocus);
+  updateAppInert();
+  setTimeout(() => {
+    if (!modal.contains(document.activeElement)) focusModal(modal, initialFocus);
+  }, 30);
+}
+
+const closeManagedModal = (modal, opts = {}) => {
+  const restoreFocus = opts.restoreFocus !== false;
+  const returnFocus = modalReturnFocus.get(modal.id);
+  modalReturnFocus.delete(modal.id);
+  modal.classList.add("hidden");
+  updateAppInert();
+
+  const activeModal = getActiveModal();
+  if (activeModal) {
+    const fallbackFocus = (
+      restoreFocus &&
+      returnFocus instanceof HTMLElement &&
+      activeModal.contains(returnFocus) &&
+      isVisibleFocusable(returnFocus)
+    ) ? returnFocus : null;
+    setTimeout(() => focusModal(activeModal, fallbackFocus), 0);
+    return;
+  }
+
+  if (restoreFocus && returnFocus instanceof HTMLElement && isVisibleFocusable(returnFocus)) {
+    setTimeout(() => returnFocus.focus(), 0);
+  }
+}
+
+const trapModalFocus = (event) => {
+  if (event.key !== "Tab") return;
+  const modal = getActiveModal();
+  if (!modal) return;
+
+  const focusable = getFocusableElements(modal);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusable[0];
+  const active = document.activeElement;
+
+  event.preventDefault();
+  if (!(active instanceof HTMLElement) || !modal.contains(active)) {
+    first.focus();
+    return;
+  }
+
+  const activeIndex = focusable.indexOf(active);
+  if (event.shiftKey) {
+    const prevIndex = activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1;
+    focusable[prevIndex].focus();
+  } else {
+    const nextIndex = activeIndex < 0 || activeIndex >= focusable.length - 1 ? 0 : activeIndex + 1;
+    focusable[nextIndex].focus();
+  }
+}
+
+const keepFocusInActiveModal = (event) => {
+  const modal = getActiveModal();
+  if (!modal) return;
+  if (event.target instanceof Node && modal.contains(event.target)) return;
+  focusModal(modal);
+}
 
 const getCategorySource = (catId) => {
   if (catId === "all") {
@@ -2411,25 +2611,82 @@ const requestToPromise = request => new Promise((resolve, reject) => {
   request.onerror = () => reject(request.error);
 });
 
-const openDB = async () => {
+const transactionToPromise = tx => new Promise((resolve, reject) => {
+  tx.oncomplete = () => resolve();
+  tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+});
+
+const openDB = async (timeoutMs = IDB_OPEN_TIMEOUT_MS) => {
   if (typeof indexedDB === "undefined") {
     throw new Error("IndexedDB is unavailable");
   }
 
   const request = indexedDB.open(DB_NAME, DB_SCHEMA);
-  request.onupgradeneeded = () => {
-    const db = request.result;
-    if (!db.objectStoreNames.contains(STORE_NAME)) {
-      db.createObjectStore(STORE_NAME, { keyPath: "key" });
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timerId = null;
+
+    const clearOpenTimer = () => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+    };
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      clearOpenTimer();
+      reject(error);
+    };
+    const resolveOnce = (db) => {
+      if (settled) {
+        closeDBConnection(db);
+        return;
+      }
+      settled = true;
+      clearOpenTimer();
+      db.onversionchange = () => {
+        closeDBConnection(db);
+        markStorageUnavailable(new Error("IndexedDB connection closed because a new version is available"));
+      };
+      resolve(db);
+    };
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timerId = setTimeout(() => {
+        rejectOnce(new Error("IndexedDB open timed out"));
+      }, timeoutMs);
     }
-  };
-  return requestToPromise(request);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "key" });
+      }
+    };
+    request.onsuccess = () => resolveOnce(request.result);
+    request.onerror = () => rejectOnce(request.error ?? new Error("IndexedDB open failed"));
+    request.onblocked = () => rejectOnce(new Error("IndexedDB open blocked by another tab or window"));
+  });
 }
 
 const withStore = async (mode, action) => {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, mode);
-  return requestToPromise(action(tx.objectStore(STORE_NAME)));
+  try {
+    const tx = db.transaction(STORE_NAME, mode);
+    const transactionDone = transactionToPromise(tx);
+    let request;
+    try {
+      request = action(tx.objectStore(STORE_NAME));
+    } catch (e) {
+      transactionDone.catch(() => {});
+      throw e;
+    }
+    const [result] = await Promise.all([requestToPromise(request), transactionDone]);
+    return result;
+  } finally {
+    closeDBConnection(db);
+  }
 }
 
 const idbGet = async key => {
@@ -2445,7 +2702,36 @@ const idbDelete = async key => {
   await withStore("readwrite", store => store.delete(key));
 }
 
+const resetLoadedCache = () => {
+  dataCache.theme = null;
+  dataCache.history = [];
+  dataCache.lastSelection = null;
+  dataCache.wordStats = {};
+  dataCache.userName = null;
+  dataCache.lastActivityAt = null;
+}
+
+const checkStoragePersistence = async () => {
+  try {
+    const probe = `${Date.now()}:${Math.random()}`;
+    await idbSet(STORAGE_HEALTH_KEY, probe);
+    const stored = await idbGet(STORAGE_HEALTH_KEY);
+    await idbDelete(STORAGE_HEALTH_KEY);
+    if (stored !== probe) throw new Error("IndexedDB health check failed");
+    markStorageAvailable();
+    return true;
+  } catch (e) {
+    markStorageUnavailable(e);
+    return false;
+  }
+}
+
 const loadAllFromIDB = async () => {
+  if (storageStatus.checked && !storageStatus.persistent) {
+    resetLoadedCache();
+    return;
+  }
+
   try {
     const lastActivityAt = await idbGet("lastActivityAt");
     // 2週間経過していたらユーザー名以外を破棄
@@ -2457,7 +2743,9 @@ const loadAllFromIDB = async () => {
         await idbDelete("selection");
         await idbDelete("wordStats");
         await idbDelete("lastActivityAt");
-      } catch (e) {}
+      } catch (e) {
+        markStorageUnavailable(e);
+      }
       dataCache.theme = null;
       dataCache.history = [];
       dataCache.lastSelection = null;
@@ -2478,12 +2766,8 @@ const loadAllFromIDB = async () => {
     dataCache.userName = (typeof userName === "string" && userName.trim()) ? userName : null;
     dataCache.lastActivityAt = (typeof lastActivityAt === "number") ? lastActivityAt : null;
   } catch (e) {
-    dataCache.theme = null;
-    dataCache.history = [];
-    dataCache.lastSelection = null;
-    dataCache.wordStats = {};
-    dataCache.userName = null;
-    dataCache.lastActivityAt = null;
+    resetLoadedCache();
+    markStorageUnavailable(e);
   }
 }
 
@@ -2494,6 +2778,7 @@ const saveUserName = async (name) => {
     if (dataCache.userName) await idbSet("userName", dataCache.userName);
     else await idbDelete("userName");
   } catch (e) {
+    markStorageUnavailable(e);
   }
   await touchActivity();
 }
@@ -2535,6 +2820,7 @@ const recordHistorySession = async (session) => {
   try {
     await idbSet("history", dataCache.history);
   } catch (e) {
+    markStorageUnavailable(e);
   }
   touchActivity();
 }
@@ -2566,6 +2852,7 @@ const persistWordStats = async () => {
       await saveWordStatsSnapshot(cloneWordStats());
     }
   } catch (e) {
+    markStorageUnavailable(e);
   }
   touchActivity();
 }
@@ -2578,6 +2865,7 @@ const clearHistoryData = async () => {
     await idbDelete("history");
     await idbDelete("wordStats");
   } catch (e) {
+    markStorageUnavailable(e);
   }
   touchActivity();
 }
@@ -2599,6 +2887,7 @@ const clearAllData = async () => {
     await idbDelete("selection");
     await idbDelete("lastActivityAt");
   } catch (e) {
+    markStorageUnavailable(e);
   }
   // ユーザー名はキャッシュ側でも保持
   dataCache.userName = preservedUserName;
@@ -2891,7 +3180,7 @@ const getLastSelection = () => {
 const saveLastSelection = (sel) => {
   const normalized = normalizeSelection(sel);
   dataCache.lastSelection = normalized;
-  idbSet("selection", normalized).catch(() => {});
+  idbSet("selection", normalized).catch(markStorageUnavailable);
   touchActivity();
 }
 
@@ -2969,7 +3258,7 @@ const renderHome = () => {
   const catCard = el("div", { class: "block" }, [
     el("p", { class: "section-title" }, "出題する分野を選ぶ"),
   ]);
-  const catList = el("div", { class: "cat-list" });
+  const catList = el("div", { class: "cat-list", role: "group", "aria-label": "出題する分野" });
   for (const c of CATEGORIES) {
     const items = getCategorySource(c.id);
     const total = items.length;
@@ -2978,8 +3267,10 @@ const renderHome = () => {
     const pct = total > 0 ? Math.round((seen / total) * 100) : 0;
     const done = total > 0 && unseen === 0;
     const isSel = c.id === sel.catId;
-    const row = el("div", {
+    const row = el("button", {
       class: "cat-row" + (isSel ? " selected" : ""),
+      type: "button",
+      "aria-pressed": String(isSel),
       dataset: { catId: c.id },
     }, [
       el("span", { class: "cat-mark" }),
@@ -2998,9 +3289,15 @@ const renderHome = () => {
         ]),
       ]),
     ]);
-    row.addEventListener("click", () => {
+    const selectCategory = () => {
       saveLastSelection({ catId: c.id, count: sel.count, shuffle: sel.shuffle, unseenOnly: sel.unseenOnly });
       renderHome();
+    };
+    row.addEventListener("click", selectCategory);
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectCategory();
     });
     catList.appendChild(row);
   }
@@ -3302,7 +3599,7 @@ const renderQuestion = () => {
     ]),
     el("p", { class: "headword-prompt" }, q.prompt),
     $choices,
-    el("div", { class: "feedback", id: "feedback" }),
+    el("div", { class: "feedback", id: "feedback", role: "status", "aria-live": "polite", "aria-atomic": "true" }),
     el("div", { class: "quiz-actions" }, [
       actionButton({ class: "btn", id: "quit-btn", type: "button" }, "中断", async () => {
         if (state.answers.length === 0 || (await showConfirm({
@@ -3584,7 +3881,7 @@ const applyThemeUI = (theme) => {
 const applyTheme = (theme) => {
   applyThemeUI(theme);
   dataCache.theme = theme;
-  idbSet("theme", theme).catch(() => {});
+  idbSet("theme", theme).catch(markStorageUnavailable);
 }
 
 const toggleTheme = () => {
@@ -3634,12 +3931,11 @@ const openUserModal = (opts) => {
     desc.textContent = "結果の HTML エクスポートに記載する名前を変更します。";
     cancelBtn.hidden = false;
   }
-  modal.classList.remove("hidden");
-  setTimeout(() => input.focus(), 30);
+  openManagedModal(modal, input);
 }
 const closeUserModal = () => {
   const modal = byId("user-modal");
-  if (modal) modal.classList.add("hidden");
+  if (modal) closeManagedModal(modal);
 }
 
 // 共通通知モーダル
@@ -3650,30 +3946,21 @@ const showNotice = (body, title) => {
   if (!modal || !b) return;
   t.textContent = title || "お知らせ";
   b.textContent = body ?? "";
-  modal.classList.remove("hidden");
-  setTimeout(() => {
-    const ok = byId("notice-modal-ok");
-    if (ok) ok.focus();
-  }, 30);
+  openManagedModal(modal, byId("notice-modal-ok"));
 }
 const closeNotice = () => {
   const modal = byId("notice-modal");
-  if (modal) modal.classList.add("hidden");
+  if (modal) closeManagedModal(modal);
 }
 
 let confirmResolve = null;
-let confirmReturnFocus = null;
 
-const closeConfirm = (confirmed = false) => {
+const closeConfirm = (confirmed = false, opts = {}) => {
   const modal = byId("confirm-modal");
-  if (modal) modal.classList.add("hidden");
+  if (modal) closeManagedModal(modal, opts);
   const resolve = confirmResolve;
   confirmResolve = null;
   if (resolve) resolve(Boolean(confirmed));
-  if (confirmReturnFocus instanceof HTMLElement) {
-    setTimeout(() => confirmReturnFocus?.focus(), 0);
-  }
-  confirmReturnFocus = null;
 }
 
 // 共通確認モーダル
@@ -3685,7 +3972,7 @@ const showConfirm = (opts = {}) => {
   const cancel = byId("confirm-modal-cancel");
   if (!modal || !title || !body || !ok || !cancel) return Promise.resolve(false);
 
-  if (confirmResolve) closeConfirm(false);
+  if (confirmResolve) closeConfirm(false, { restoreFocus: false });
 
   title.textContent = opts.title || "確認";
   body.textContent = opts.body ?? "";
@@ -3694,36 +3981,25 @@ const showConfirm = (opts = {}) => {
   ok.classList.toggle("btn-danger", opts.danger === true);
   ok.classList.toggle("btn-primary", opts.danger !== true);
 
-  confirmReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  modal.classList.remove("hidden");
-  setTimeout(() => cancel.focus(), 30);
+  openManagedModal(modal, cancel);
 
   return new Promise(resolve => {
     confirmResolve = resolve;
   });
 }
 
-const isModalVisible = (id) => {
-  const modal = byId(id);
-  return Boolean(modal && !modal.classList.contains("hidden"));
-}
-
-const isAnyModalOpen = () => (
-  isModalVisible("user-modal") ||
-  isModalVisible("notice-modal") ||
-  isModalVisible("confirm-modal")
-);
-
 const init = async () => {
   // デフォルトはライト固定。OS設定は採用せず、利用者が切替を保存した場合のみその設定を適用する。
   applyThemeUI("light");
 
+  await checkStoragePersistence();
   await loadAllFromIDB();
 
   applyThemeUI(dataCache.theme ?? "light");
 
   showScreen("home");
   refreshUserBtn();
+  renderStorageWarning();
 
   // 初回または2週間経過でリセットされた場合 → 強制でユーザー名入力モーダル
   if (!dataCache.userName) {
@@ -3733,6 +4009,8 @@ const init = async () => {
   byId("theme-toggle").addEventListener("click", toggleTheme);
   byId("nav-home").addEventListener("click", () => showScreen("home"));
   byId("nav-wordbook").addEventListener("click", () => showScreen("wordbook"));
+  document.addEventListener("keydown", trapModalFocus, true);
+  document.addEventListener("focusin", keepFocusInActiveModal);
 
   // ユーザー名ボタン → 編集モーダル
   byId("user-btn").addEventListener("click", () => openUserModal({ required: false }));
@@ -3774,12 +4052,13 @@ const init = async () => {
     userNameCompositionEndedAt = performance.now();
   });
   userNameInput.addEventListener("keydown", (e) => {
-    e.stopPropagation();
     if (isUserNameComposing(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
+      e.stopPropagation();
       byId("user-modal-save").click();
     } else if (e.key === "Escape") {
+      e.stopPropagation();
       if (dataCache.userName) closeUserModal();
     }
   });
@@ -3833,8 +4112,9 @@ const init = async () => {
 window.MustDevEigo = {
   Data: { DATA, CATEGORIES, getCategorySource },
   Quiz: { state, startQuiz, startMistakeQuiz, buildQuestion },
-  Storage: { dataCache, openDB, idbGet, idbSet, idbDelete, loadAllFromIDB },
+  Storage: { dataCache, storageStatus, openDB, idbGet, idbSet, idbDelete, loadAllFromIDB, checkStoragePersistence },
   UI: { showScreen, renderHome, renderWordbook, renderQuestion },
+  Test: { normalizeHistory, normalizeSelection },
   App: { init },
 };
 
